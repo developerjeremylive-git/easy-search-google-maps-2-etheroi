@@ -87,7 +87,8 @@ Una vez iniciado el servidor, abre tu navegador y ve a:
 http://localhost:8000
 ```
 
-#### Para ver todas las demos disponibles:\```
+#### Para ver todas las demos disponibles:
+```
 http://localhost:8000/index-demo.html
 ```
 
