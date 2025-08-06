@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Map Explorer</title>
+    
+    <!-- Leaflet.js - Free OpenStreetMap integration -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <!-- Google Maps API - Basic version without extra libraries -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=SyCtA5WnjZnY03AIzaSyCtA5WnjZnY03"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+            font-family: 'Roboto', sans-serif; 
+        }
+        
+        body { 
+            padding: 20px; 
+            line-height: 1.6; 
+            background-color: #f5f5f5;
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 { 
+            margin-bottom: 1rem; 
+            color: #333;
+            text-align: center;
+        }
+        
+        p.subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        
+        .search-container { 
+            display: flex; 
+            margin: 1rem 0; 
+            gap: 10px; 
+        }
+        
+        #searchInput { 
+            flex: 1; 
+            padding: 10px 15px;
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+            font-size: 16px;
+        }
+        
+        button { 
+            padding: 10px 20px; 
+            background: #4a90e2; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover { 
+            background: #357abd; 
+        }
+        
+        #map { 
+            height: 60vh; 
+            width: 100%; 
+            border-radius: 8px; 
+            margin-top: 1rem;
+            border: 1px solid #ddd;
+        }
+        
+        .map-controls { 
+            display: flex; 
+            flex-direction: column;
+            gap: 10px; 
+            margin: 1rem 0; 
+        }
+        
+        .map-provider-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .toggle-label {
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .toggle-btn {
+            padding: 6px 12px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .toggle-btn.active {
+            background: #4a90e2;
+            color: white;
+            border-color: #357abd;
+        }
+        
+        .map-type-container {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .map-type-btn { 
+            background: #f0f0f0; 
+            color: #333;
+            padding: 8px 15px;
+        }
+        
+        .map-type-btn.active { 
+            background: #4a90e2; 
+            color: white; 
+        }
+        
+        #locationInfo { 
+            margin-top: 1rem; 
+            padding: 15px; 
+            background: #f8f9fa; 
+            border-radius: 4px;
+            border-left: 4px solid #4a90e2;
+        }
+        
+        .coordinates {
+            font-family: monospace;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌍 Simple Map Explorer</h1>
+        <p class="subtitle">Click on the map to add a marker or search for a location</p>
+        
+        <div class="search-container">
+            <input type="text" id="searchInput" placeholder="Search for a city, address, or place...">
+            <button id="searchBtn">Search</button>
+        </div>
+        
+        <div class="map-controls">
+            <div class="map-provider-toggle">
+                <span class="toggle-label">Map Provider:</span>
+                <button id="leafletBtn" class="toggle-btn active" data-provider="leaflet">Leaflet</button>
+                <button id="googleBtn" class="toggle-btn" data-provider="google">Google Maps</button>
+            </div>
+            <div id="mapTypeContainer" class="map-type-container">
+                <!-- Map type buttons will be added here by JavaScript -->
+            </div>
+        </div>
+        
+        <div id="map"></div>
+        
+        <div id="locationInfo" style="display: none;">
+            <p>📍 Coordinates: <span class="coordinates" id="lat"></span>, <span class="coordinates" id="lng"></span></p>
+        </div>
+    </div>
+
+    <script>
+        // Map instances and state
+        let leafletMap = null;
+        let googleMap = null;
+        let currentProvider = 'leaflet'; // 'leaflet' or 'google'
+        let lastMarkerPosition = null; // Store the last marker position when switching providers
+        // Store map types separately for each provider
+        let leafletMapType = 'standard';
+        let googleMapType = 'roadmap';
+        let currentTileLayer = null;
+        let markers = [];
+        let googleMarkers = [];
+        let lastPosition = { lat: 37.7749, lng: -122.4194, zoom: 12 }; // Default: San Francisco
+        
+        // Map tile providers for Leaflet
+        const TILE_PROVIDERS = {
+            standard: {
+                name: 'Standard',
+                url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19,
+                googleMapType: 'roadmap'
+            },
+            satellite: {
+                name: 'Satellite',
+                url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                attribution: '© Esri, DigitalGlobe, GeoEye, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community',
+                maxZoom: 19,
+                googleMapType: 'satellite'
+            },
+            terrain: {
+                name: 'Terrain',
+                url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+                attribution: '© OpenTopoMap contributors',
+                maxZoom: 17,
+                googleMapType: 'terrain'
+            }
+        };
+        
+        // Initialize the application
+        function initApp() {
+            // Initialize map provider toggle
+            document.getElementById('leafletBtn').addEventListener('click', () => switchMapProvider('leaflet'));
+            document.getElementById('googleBtn').addEventListener('click', () => switchMapProvider('google'));
+            
+            // Initialize search functionality
+            document.getElementById('searchBtn').addEventListener('click', searchLocation);
+            document.getElementById('searchInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') searchLocation();
+            });
+            
+            // Initialize with Leaflet by default
+            initLeafletMap();
+            updateMapTypeControls();
+        }
+        
+        // Switch between Leaflet and Google Maps
+        function switchMapProvider(provider) {
+            if (provider === currentProvider) return;
+            
+            // Save current view state and marker position before switching
+            saveCurrentViewState();
+            
+            // Save the current marker position if it exists
+            if (currentProvider === 'leaflet' && markers.length > 0 && leafletMap) {
+                const marker = markers[0];
+                if (marker.getLatLng) {
+                    lastMarkerPosition = marker.getLatLng();
+                }
+            } else if (currentProvider === 'google' && googleMarkers.length > 0 && googleMap) {
+                const marker = googleMarkers[0];
+                if (marker && marker.position) {
+                    // Handle both function and direct property access for position
+                    const position = typeof marker.getPosition === 'function' ? 
+                        marker.getPosition() : 
+                        marker.position;
+                    
+                    lastMarkerPosition = {
+                        lat: typeof position.lat === 'function' ? position.lat() : position.lat,
+                        lng: typeof position.lng === 'function' ? position.lng() : position.lng
+                    };
+                }
+            }
+            
+            // No need to convert map types anymore as they're stored separately
+            
+            // Clear existing map
+            if (currentProvider === 'leaflet') {
+                destroyLeafletMap();
+            } else {
+                destroyGoogleMap();
+            }
+            
+            // Update current provider
+            currentProvider = provider;
+            
+            // Initialize new map
+            if (provider === 'leaflet') {
+                initLeafletMap();
+            } else {
+                initGoogleMap();
+            }
+            
+            // Restore marker if it existed
+            if (lastMarkerPosition) {
+                const lat = lastMarkerPosition.lat || lastMarkerPosition.lat();
+                const lng = lastMarkerPosition.lng || lastMarkerPosition.lng();
+                addMarker(lat, lng);
+                updateLocationInfo(lat, lng);
+            }
+            
+            // Update active button
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.provider === provider);
+            });
+            
+            // Update map type controls
+            updateMapTypeControls();
+        }
+        
+        // Save current map view state
+        function saveCurrentViewState() {
+            if (currentProvider === 'leaflet' && leafletMap) {
+                const center = leafletMap.getCenter();
+                lastPosition = {
+                    lat: center.lat,
+                    lng: center.lng,
+                    zoom: leafletMap.getZoom()
+                };
+            } else if (googleMap) {
+                const center = googleMap.getCenter();
+                lastPosition = {
+                    lat: center.lat(),
+                    lng: center.lng(),
+                    zoom: googleMap.getZoom()
+                };
+            }
+        }
+        
+        // Initialize Leaflet map
+        function initLeafletMap() {
+            leafletMap = L.map('map', {
+                center: [lastPosition.lat, lastPosition.lng],
+                zoom: lastPosition.zoom,
+                zoomControl: false
+            });
+            
+            // Add zoom control
+            L.control.zoom({
+                position: 'topright'
+            }).addTo(leafletMap);
+            
+            // Add scale control
+            L.control.scale({
+                imperial: true,
+                metric: true
+            }).addTo(leafletMap);
+            
+            // Add the saved tile layer for Leaflet
+            setTimeout(() => {
+                if (leafletMap) {
+                    leafletMap.invalidateSize();
+                    changeTileLayer(leafletMapType);
+                }
+            }, 100);
+            
+            // Use the same unified click handler for Leaflet
+            const handleMapClick = (e) => {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                
+                // Clear existing markers and add new one
+                clearMarkers();
+                addMarker(lat, lng);
+                updateLocationInfo(lat, lng);
+                reverseGeocode(lat, lng);
+                
+                // Prevent any default behavior
+                if (e.originalEvent) e.originalEvent.preventDefault();
+                return false;
+            };
+            
+            // Add click listener for Leaflet
+            leafletMap.on('click', handleMapClick);
+            
+            // Update location info when map moves
+            leafletMap.on('moveend', function() {
+                const center = leafletMap.getCenter();
+                updateLocationInfo(center.lat, center.lng);
+            });
+        }
+        
+        // Initialize Google Map
+        function initGoogleMap() {
+            const mapOptions = {
+                center: { lat: lastPosition.lat, lng: lastPosition.lng },
+                zoom: lastPosition.zoom,
+                mapTypeId: googleMapType,
+                disableDefaultUI: true,
+                zoomControl: true,
+                zoomControlOptions: {
+                    position: google.maps.ControlPosition.RIGHT_TOP
+                },
+                mapTypeControl: false,
+                scaleControl: true
+            };
+            
+            googleMap = new google.maps.Map(document.getElementById('map'), mapOptions);
+            
+            // Add unified click handler for Google Maps
+            const handleMapClick = (e) => {
+                let lat, lng;
+                if (e.latLng) { // Google Maps event
+                    lat = e.latLng.lat();
+                    lng = e.latLng.lng();
+                } else { // Leaflet event
+                    lat = e.latlng.lat;
+                    lng = e.latlng.lng;
+                }
+                
+                // Clear existing markers and add new one
+                clearMarkers();
+                addMarker(lat, lng);
+                updateLocationInfo(lat, lng);
+                
+                // If using Google Maps, prevent any default behavior
+                if (e.stop) e.stop();
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            };
+            
+            // Add click listener for Google Maps
+            googleMap.addListener('click', handleMapClick);
+            
+            // Update location info when map moves
+            googleMap.addListener('center_changed', function() {
+                const center = googleMap.getCenter();
+                updateLocationInfo(center.lat(), center.lng());
+            });
+        }
+        
+        // Update map type controls based on current provider
+        function updateMapTypeControls() {
+            const container = document.getElementById('mapTypeContainer');
+            container.innerHTML = ''; // Clear existing buttons
+            
+            if (currentProvider === 'leaflet') {
+                // Add Leaflet map type buttons
+                Object.entries(TILE_PROVIDERS).forEach(([key, provider]) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'map-type-btn';
+                    btn.dataset.type = key;
+                    btn.textContent = provider.name;
+                    btn.onclick = () => changeTileLayer(key);
+                    if (key === 'standard') btn.classList.add('active');
+                    container.appendChild(btn);
+                });
+            } else {
+                // Add Google Maps map type buttons
+                const googleMapTypes = [
+                    { id: 'roadmap', name: 'Map' },
+                    { id: 'satellite', name: 'Satellite' },
+                    { id: 'terrain', name: 'Terrain' },
+                    { id: 'hybrid', name: 'Hybrid' }
+                ];
+                
+                googleMapTypes.forEach(type => {
+                    const btn = document.createElement('button');
+                    btn.className = 'map-type-btn';
+                    btn.dataset.type = type.id;
+                    btn.textContent = type.name;
+                    btn.onclick = () => changeGoogleMapType(type.id);
+                    if (type.id === googleMapType) btn.classList.add('active');
+                    container.appendChild(btn);
+                });
+            }
+        }
+        
+        // Change the base map layer for Leaflet
+        function changeTileLayer(providerKey) {
+            const provider = TILE_PROVIDERS[providerKey];
+            if (!provider || !leafletMap) return;
+            
+            if (currentTileLayer) {
+                leafletMap.removeLayer(currentTileLayer);
+            }
+            
+            currentTileLayer = L.tileLayer(provider.url, {
+                attribution: provider.attribution,
+                maxZoom: provider.maxZoom || 19
+            }).addTo(leafletMap);
+            
+            // Update Leaflet's map type
+            leafletMapType = providerKey;
+            
+            // Update active button
+            document.querySelectorAll('.map-type-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.type === providerKey);
+            });
+        }
+        
+        // Change the map type for Google Maps
+        function changeGoogleMapType(mapType) {
+            if (!googleMap) return;
+            
+            // Update Google's map type
+            googleMapType = mapType;
+            googleMap.setMapTypeId(mapType);
+            
+            // No need to update Leaflet's map type here
+            
+            // Update active button
+            document.querySelectorAll('.map-type-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.type === mapType);
+            });
+        }
+        
+        // Add a marker at the specified coordinates
+        function addMarker(lat, lng) {
+            // Clear existing markers
+            clearMarkers();
+            
+            if (currentProvider === 'leaflet' && leafletMap) {
+                // Add Leaflet marker
+                const marker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'custom-marker',
+                        html: '📍',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 30],
+                        popupAnchor: [0, -30]
+                    })
+                }).addTo(leafletMap);
+                
+                // Store marker reference
+                markers.push(marker);
+                
+                // Pan to marker with smooth animation
+                leafletMap.panTo([lat, lng], {
+                    animate: true,
+                    duration: 1
+                });
+            } else if (googleMap) {
+                // Create a custom marker using OverlayView
+                class CustomMarker extends google.maps.OverlayView {
+                    constructor(position, map) {
+                        super();
+                        this.position = position;
+                        this.map = map;
+                        this.div = null;
+                        this.setMap(map);
+                    }
+
+                    onAdd() {
+                        this.div = document.createElement('div');
+                        this.div.className = 'custom-marker';
+                        this.div.innerHTML = '📍';
+                        this.div.style.position = 'absolute';
+                        this.div.style.fontSize = '30px';
+                        this.div.style.transform = 'translate(-50%, -100%)';
+                        this.div.style.cursor = 'pointer';
+                        
+                        // Add the element to the overlay layer
+                        const panes = this.getPanes();
+                        panes.overlayMouseTarget.appendChild(this.div);
+                    }
+
+                    draw() {
+                        const overlayProjection = this.getProjection();
+                        const pos = overlayProjection.fromLatLngToDivPixel(
+                            new google.maps.LatLng(this.position.lat, this.position.lng)
+                        );
+                        
+                        if (this.div) {
+                            this.div.style.left = (pos.x) + 'px';
+                            this.div.style.top = (pos.y) + 'px';
+                        }
+                    }
+
+                    onRemove() {
+                        if (this.div) {
+                            this.div.remove();
+                            this.div = null;
+                        }
+                    }
+                }
+                
+                // Add custom marker
+                const marker = new CustomMarker(
+                    { lat: parseFloat(lat), lng: parseFloat(lng) },
+                    googleMap
+                );
+                
+                // Store marker reference
+                googleMarkers.push(marker);
+                
+                // Pan to marker
+                googleMap.panTo({ lat: parseFloat(lat), lng: parseFloat(lng) });
+            }
+        }
+        
+        // Clear all markers from the map
+        function clearMarkers() {
+            // Clear Leaflet markers
+            markers.forEach(marker => {
+                if (marker && marker.remove) {
+                    marker.remove();
+                }
+            });
+            markers = [];
+            
+            // Clear Google Maps markers
+            googleMarkers.forEach(marker => {
+                if (marker) {
+                    // Check if it's our custom marker or a standard one
+                    if (typeof marker.setMap === 'function') {
+                        marker.setMap(null);
+                    } else if (marker.onRemove) {
+                        // For our custom marker implementation
+                        marker.onRemove();
+                        marker.setMap(null);
+                    }
+                }
+            });
+            googleMarkers = [];
+        }
+        
+        // Clean up Leaflet map
+        function destroyLeafletMap() {
+            if (leafletMap) {
+                clearMarkers();
+                leafletMap.off();
+                leafletMap.remove();
+                leafletMap = null;
+            }
+        }
+        
+        // Clean up Google Map
+        function destroyGoogleMap() {
+            clearMarkers();
+            googleMap = null;
+        }
+        
+        // Update location information display
+        function updateLocationInfo(lat, lng) {
+            document.getElementById('lat').textContent = lat;
+            document.getElementById('lng').textContent = lng;
+            document.getElementById('locationInfo').style.display = 'block';
+        }
+        
+        // Search for a location
+        function searchLocation() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+            
+            showLoading(true);
+            
+            if (currentProvider === 'leaflet') {
+                // Use OpenStreetMap Nominatim for geocoding with Leaflet
+                fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        showLoading(false);
+                        
+                        if (data && data.length > 0) {
+                            const result = data[0];
+                            const lat = parseFloat(result.lat);
+                            const lng = parseFloat(result.lon);
+                            
+                            // Update map view
+                            leafletMap.setView([lat, lng], 15);
+                            
+                            // Add marker and update info
+                            addMarker(lat, lng);
+                            updateLocationInfo(lat, lng);
+                            
+                            // Update search input with the found location
+                            document.getElementById('searchInput').value = result.display_name.split(',')[0];
+                        } else {
+                            alert('Location not found. Please try a different search term.');
+                        }
+                    })
+                    .catch(error => {
+                        showLoading(false);
+                        console.error('Error searching location:', error);
+                        alert('Error searching for location. Please try again.');
+                    });
+            } else if (googleMap) {
+                // Use Google Places API for geocoding with Google Maps
+                const geocoder = new google.maps.Geocoder();
+                geocoder.geocode({ address: query }, (results, status) => {
+                    showLoading(false);
+                    
+                    if (status === 'OK' && results[0]) {
+                        const location = results[0].geometry.location;
+                        const lat = location.lat();
+                        const lng = location.lng();
+                        
+                        // Update map view
+                        googleMap.setCenter(location);
+                        googleMap.setZoom(15);
+                        
+                        // Add marker and update info
+                        addMarker(lat, lng);
+                        updateLocationInfo(lat, lng);
+                        
+                        // Update search input with the found location
+                        document.getElementById('searchInput').value = results[0].formatted_address;
+                    } else {
+                        alert('Location not found. Please try a different search term.');
+                    }
+                });
+            }
+        }
+        
+        // Reverse geocode coordinates to get address
+        function reverseGeocode(lat, lng) {
+            if (currentProvider === 'leaflet') {
+                // Use OpenStreetMap Nominatim for reverse geocoding with Leaflet
+                fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data && data.display_name) {
+                            // You can use the address data here if needed
+                            console.log('Address:', data.display_name);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error reverse geocoding:', error);
+                    });
+            } else if (googleMap) {
+                // Use Google Maps Geocoder for reverse geocoding
+                const geocoder = new google.maps.Geocoder();
+                const latLng = new google.maps.LatLng(parseFloat(lat), parseFloat(lng));
+                
+                geocoder.geocode({ location: latLng }, (results, status) => {
+                    if (status === 'OK' && results[0]) {
+                        console.log('Address:', results[0].formatted_address);
+                    }
+                });
+            }
+        }
+        
+        // Show/hide loading state
+        function showLoading(show) {
+            const searchBtn = document.getElementById('searchBtn');
+            const searchInput = document.getElementById('searchInput');
+            
+            if (show) {
+                searchBtn.disabled = true;
+                searchInput.disabled = true;
+                searchBtn.innerHTML = 'Searching...';
+            } else {
+                searchBtn.disabled = false;
+                searchInput.disabled = false;
+                searchBtn.innerHTML = 'Search';
+            }
+        }
+        
+        // Initialize the application when the page loads
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
